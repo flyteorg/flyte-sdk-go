@@ -7,8 +7,7 @@ toolchain go1.24.7
 require (
 	github.com/flyteorg/flyte/v2 v2.0.0
 	golang.org/x/oauth2 v0.34.0
-	google.golang.org/grpc v1.77.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/grpc v1.79.3
 )
 
 require (
@@ -17,4 +16,5 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251222181119-0a764e51fe1b // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
