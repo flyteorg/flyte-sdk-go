@@ -1,20 +1,61 @@
 # Flyte Go SDK
 
-A Go SDK for launching and monitoring runs of tasks deployed on a Flyte
-control plane. It mirrors the remote-execution surface of the
-[Python `flyte` SDK](https://github.com/flyteorg/flyte-sdk) while staying
+**Launch and monitor Flyte task runs from Go — control-plane parity with the
+[Python `flyte` SDK](https://github.com/flyteorg/flyte-sdk).**
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/unionai/flyte-sdk-go.svg)](https://pkg.go.dev/github.com/unionai/flyte-sdk-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/unionai/flyte-sdk-go)](https://goreportcard.com/report/github.com/unionai/flyte-sdk-go)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/unionai/flyte-sdk-go)](go.mod)
+[![License](https://img.shields.io/badge/license-Apache%202.0-orange)](LICENSE)
+
+It mirrors the remote-execution surface of the Python SDK while staying
 idiomatic Go, and is built to be embedded in services: import, `Init` once,
 then `Run` tasks.
 
-```go
-flyte.Init(ctx, flyte.Config{Endpoint: "my-org.example.com", Project: "my-project", Domain: "development"})
-defer flyte.Close()
+## Install
 
-task, _ := flyte.GetTask(ctx, flyte.TaskRef{Name: "my_env.my_task"}) // latest version
-run, _ := flyte.Run(ctx, task, flyte.Inputs{"x": 5})
-run.Wait(ctx)
-outputs, _ := run.Outputs(ctx)
+```bash
+go get github.com/unionai/flyte-sdk-go
 ```
+
+## Quick start
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/unionai/flyte-sdk-go/flyte"
+)
+
+func main() {
+	ctx := context.Background()
+
+	flyte.Init(ctx, flyte.Config{Endpoint: "my-org.example.com", Project: "my-project", Domain: "development"})
+	defer flyte.Close()
+
+	task, _ := flyte.GetTask(ctx, flyte.TaskRef{Name: "my_env.my_task"}) // latest version
+	run, _ := flyte.Run(ctx, task, flyte.Inputs{"x": 5})
+	run.Wait(ctx)
+
+	outputs, _ := run.Outputs(ctx)
+	fmt.Println(outputs)
+}
+```
+
+[`example/main.go`](example/main.go) is a fuller, runnable version against a
+live cluster:
+
+```bash
+FLYTE_ENDPOINT=my-org.example.com \
+FLYTE_PROJECT=my-project FLYTE_DOMAIN=development \
+go run ./example
+```
+
+Set `FLYTE_API_KEY` for headless auth, or `FLYTE_AUTH_COMMAND` to supply a
+token-printing command; otherwise the browser PKCE flow is used.
 
 ## Features
 
@@ -33,12 +74,6 @@ outputs, _ := run.Outputs(ctx)
   client credentials, device flow, and external token commands.
 - **Config-file compatible** — reads flytectl/uctl-style `config.yaml` files
   from the same search paths as the Python SDK.
-
-## Installation
-
-```bash
-go get github.com/unionai/flyte-sdk-go
-```
 
 ## Initialization
 
@@ -175,19 +210,6 @@ outputs, err := run.Outputs(ctx) // map[string]any, e.g. {"o0": 49}
 err = run.Abort(ctx, "superseded")
 ```
 
-## Example
-
-[`example/main.go`](example/main.go) runs tasks on a live cluster:
-
-```bash
-FLYTE_ENDPOINT=my-org.example.com \
-FLYTE_PROJECT=my-project FLYTE_DOMAIN=development \
-go run ./example
-```
-
-Set `FLYTE_API_KEY` for headless auth, or `FLYTE_AUTH_COMMAND` to supply a
-token-printing command; otherwise the browser PKCE flow is used.
-
 ## Package layout
 
 ```
@@ -202,3 +224,22 @@ protocol](https://connectrpc.com) (like the Python SDK) using the flyteidl2
 services: `TaskService` (task discovery), `DataProxyService` (input offload,
 action data), `RunService` (create, watch, abort) and `AuthMetadataService`
 (anonymous OAuth discovery).
+
+## Learn more
+
+- **[flyte-sdk](https://github.com/flyteorg/flyte-sdk)** — the Python `flyte`
+  SDK this package mirrors
+- **[flyte](https://github.com/flyteorg/flyte)** — the Flyte project
+- **[Documentation](https://www.union.ai/docs/v2/flyte/user-guide/running-locally/)**
+- **[Slack](https://slack.flyte.org/)** |
+  **[GitHub Discussions](https://github.com/flyteorg/flyte/discussions)** |
+  **[Issues](https://github.com/unionai/flyte-sdk-go/issues)**
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to
+build, test, and submit a PR, or join us on [slack.flyte.org](https://slack.flyte.org).
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).
