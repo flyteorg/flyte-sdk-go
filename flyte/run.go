@@ -85,7 +85,7 @@ func Run(ctx context.Context, task Task, inputs Inputs, opts ...RunOption) (*Run
 
 	req := &workflow.CreateRunRequest{
 		Task:    &workflow.CreateRunRequest_TaskId{TaskId: details.pb.GetTaskId()},
-		RunSpec: buildRunSpec(o),
+		RunSpec: buildRunSpec(o, cfg.Org, project, domain),
 	}
 	upload := &dataproxy.UploadInputsRequest{
 		Inputs:  pbInputs,
@@ -138,8 +138,9 @@ func Run(ctx context.Context, task Task, inputs Inputs, opts ...RunOption) (*Run
 }
 
 // buildRunSpec assembles the RunSpec the same way the Python SDK's
-// _apply_overrides does for a fresh run.
-func buildRunSpec(o *runOptions) *taskpb.RunSpec {
+// _apply_overrides does for a fresh run. Org/project/domain scope the related
+// run reference; relations are always within a single project/domain.
+func buildRunSpec(o *runOptions, org, project, domain string) *taskpb.RunSpec {
 	spec := &taskpb.RunSpec{
 		OverwriteCache:       o.overwriteCache,
 		Queue:                o.queue,
@@ -172,6 +173,15 @@ func buildRunSpec(o *runOptions) *taskpb.RunSpec {
 		spec.SecurityContext = &core.SecurityContext{
 			RunAs: &core.Identity{K8SServiceAccount: o.serviceAccount},
 		}
+	}
+	if o.relatedRun != "" {
+		spec.Relation = &common.Relation{
+			RelatedTo:    &common.RunIdentifier{Org: org, Project: project, Domain: domain, Name: o.relatedRun},
+			RelationType: o.relationType,
+		}
+	}
+	if o.recover || len(o.forceRerunActions) > 0 {
+		spec.Recover = &taskpb.Recover{ForceRerunActions: o.forceRerunActions}
 	}
 	return spec
 }

@@ -1,8 +1,24 @@
 package flyte
 
+import (
+	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/common"
+)
+
 // RunOption customizes a single Run call. The options mirror the parameters of
 // the Python SDK's flyte.with_runcontext(...).
 type RunOption func(*runOptions)
+
+// RelationType describes how a new run was derived from an existing run.
+type RelationType = common.RelationType
+
+const (
+	// RelationTypeSpawn marks a run programmatically spawned by another run.
+	RelationTypeSpawn = common.RelationType_RELATION_TYPE_SPAWN
+	// RelationTypeRerun marks a plain rerun: every action re-executes.
+	RelationTypeRerun = common.RelationType_RELATION_TYPE_RERUN
+	// RelationTypeRecover marks a recovery run; use WithRecover to create one.
+	RelationTypeRecover = common.RelationType_RELATION_TYPE_RECOVER
+)
 
 type runOptions struct {
 	name                 string
@@ -18,6 +34,10 @@ type runOptions struct {
 	maxActionConcurrency uint32
 	rawDataPath          string
 	runBaseDir           string
+	relatedRun           string
+	relationType         RelationType
+	recover              bool
+	forceRerunActions    []string
 }
 
 func newRunOptions(opts []RunOption) *runOptions {
@@ -123,6 +143,39 @@ func WithRawDataPath(path string) RunOption {
 // outputs.pb). Leave empty to use the org/project/domain settings default.
 func WithRunBaseDir(dir string) RunOption {
 	return func(o *runOptions) { o.runBaseDir = dir }
+}
+
+// WithRelation records that this run derives from an existing run in the same
+// project/domain (e.g. RelationTypeRerun for provenance-only reruns). To create
+// a recovery run use WithRecover, which also enables recovery semantics.
+func WithRelation(runName string, relationType RelationType) RunOption {
+	return func(o *runOptions) {
+		o.relatedRun = runName
+		o.relationType = relationType
+	}
+}
+
+// WithRecover creates this run as a recovery of an existing run: actions that
+// succeeded (or were recovered) in the source run are skipped and their outputs
+// reused; everything else re-executes. It is the Go equivalent of Python's
+// flyte.rerun with recover=True and implies
+// WithRelation(runName, RelationTypeRecover).
+func WithRecover(runName string) RunOption {
+	return func(o *runOptions) {
+		o.relatedRun = runName
+		o.relationType = RelationTypeRecover
+		o.recover = true
+	}
+}
+
+// WithForceRerunActions names actions that must re-execute in a recovery run
+// even when they succeeded in the source run. A listed parent action re-enqueues
+// its children, each of which goes through the recovery decision individually.
+// Only meaningful together with WithRecover; unknown names are ignored.
+func WithForceRerunActions(names ...string) RunOption {
+	return func(o *runOptions) {
+		o.forceRerunActions = append(o.forceRerunActions, names...)
+	}
 }
 
 func (o *runOptions) setLabel(k, v string) {
