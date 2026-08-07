@@ -142,7 +142,7 @@ func Run(ctx context.Context, task Task, inputs Inputs, opts ...RunOption) (*Run
 func buildRunSpec(o *runOptions) *taskpb.RunSpec {
 	spec := &taskpb.RunSpec{
 		OverwriteCache:       o.overwriteCache,
-		Cluster:              o.queue,
+		Queue:                o.queue,
 		MaxActionConcurrency: o.maxActionConcurrency,
 		RunBaseDir:           o.runBaseDir,
 		CacheConfig: &taskpb.CacheConfig{
