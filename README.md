@@ -189,6 +189,22 @@ run, err := flyte.Run(ctx, task,
 Inputs the task declares defaults for may be omitted; missing required inputs
 and unknown input names fail before anything hits the cluster.
 
+To derive a run from an existing one in the same project/domain:
+
+```go
+// Recovery: actions that succeeded in "failed-run" are skipped and their
+// outputs reused; add WithForceRerunActions to re-execute specific ones anyway.
+run, err := flyte.Run(ctx, task, inputs,
+    flyte.WithRecover("failed-run"),
+    flyte.WithForceRerunActions("a1"),
+)
+
+// Provenance only: record the source run without recovery semantics.
+run, err = flyte.Run(ctx, task, inputs,
+    flyte.WithRelation("src-run", flyte.RelationTypeRerun),
+)
+```
+
 ## Monitoring and results
 
 ```go
