@@ -241,7 +241,8 @@ func (r *RunHandle) Wait(ctx context.Context) error {
 		return fmt.Errorf("run %s failed: %s", r.Name(), last.Error)
 	}
 	switch r.currentPhase() {
-	case common.ActionPhase_ACTION_PHASE_SUCCEEDED:
+	case common.ActionPhase_ACTION_PHASE_SUCCEEDED,
+		common.ActionPhase_ACTION_PHASE_RECOVERED:
 		return nil
 	case common.ActionPhase_ACTION_PHASE_ABORTED:
 		return fmt.Errorf("run %s was aborted", r.Name())
@@ -269,16 +270,26 @@ func (r *RunHandle) Watch(ctx context.Context) (<-chan RunUpdate, error) {
 	if actionID.GetRun() == nil {
 		return nil, fmt.Errorf("invalid run: missing action identifier")
 	}
+	return watchActionPhases(ctx, r.clientset, actionID, func(details *workflow.ActionDetails) {
+		r.setPhase(details.GetStatus().GetPhase())
+	})
+}
+
+// watchActionPhases streams phase updates for one action until it reaches a
+// terminal phase, invoking onDetails for every status-bearing message.
+// Transient stream drops are reconnected transparently.
+func watchActionPhases(ctx context.Context, clientset *client.RunClientset, actionID *common.ActionIdentifier, onDetails func(*workflow.ActionDetails)) (<-chan RunUpdate, error) {
+	var phase common.ActionPhase
 
 	watch := func() (*connect.ServerStreamForClient[workflow.WatchActionDetailsResponse], error) {
-		return r.clientset.RunServiceClient().WatchActionDetails(ctx, connect.NewRequest(&workflow.WatchActionDetailsRequest{
+		return clientset.RunServiceClient().WatchActionDetails(ctx, connect.NewRequest(&workflow.WatchActionDetailsRequest{
 			ActionId: actionID,
 		}))
 	}
 
 	stream, err := watch()
 	if err != nil {
-		return nil, fmt.Errorf("failed to watch run: %w", err)
+		return nil, fmt.Errorf("failed to watch action: %w", err)
 	}
 
 	updates := make(chan RunUpdate, 16)
@@ -289,21 +300,21 @@ func (r *RunHandle) Watch(ctx context.Context) (<-chan RunUpdate, error) {
 			if !stream.Receive() {
 				err := stream.Err()
 				if err == nil {
-					// Normal end of stream: the server closed it. If the run is
-					// not terminal yet, treat it like a drop and reconnect.
-					err = fmt.Errorf("stream closed before run reached a terminal phase")
+					// Normal end of stream: the server closed it. If the action
+					// is not terminal yet, treat it like a drop and reconnect.
+					err = fmt.Errorf("stream closed before the action reached a terminal phase")
 				}
 				if connect.CodeOf(err) == connect.CodeCanceled || ctx.Err() != nil {
 					return
 				}
-				// The run has not reached a terminal phase, so an EOF or a
+				// The action has not reached a terminal phase, so an EOF or a
 				// transport error only means the stream dropped; reconnect
 				// with linear backoff until it sticks or we give up.
 				for {
 					failures++
 					if failures > watchMaxConsecutiveFailures {
 						select {
-						case updates <- RunUpdate{Phase: r.Phase(), Timestamp: time.Now(), Error: fmt.Sprintf("watch stream error: %v", err)}:
+						case updates <- RunUpdate{Phase: phase.String(), Timestamp: time.Now(), Error: fmt.Sprintf("watch stream error: %v", err)}:
 						case <-ctx.Done():
 						}
 						return
@@ -328,14 +339,14 @@ func (r *RunHandle) Watch(ctx context.Context) (<-chan RunUpdate, error) {
 				continue
 			}
 			failures = 0
-			phase := details.GetStatus().GetPhase()
-			r.setPhase(phase)
+			phase = details.GetStatus().GetPhase()
+			onDetails(details)
 
 			update := RunUpdate{Phase: phase.String(), Timestamp: time.Now()}
 			if phase == common.ActionPhase_ACTION_PHASE_FAILED {
 				update.Error = details.GetErrorInfo().GetMessage()
 				if update.Error == "" {
-					update.Error = "run failed"
+					update.Error = "action failed"
 				}
 			}
 
@@ -364,6 +375,9 @@ func (r *RunHandle) Outputs(ctx context.Context) (map[string]any, error) {
 	}
 	if r.currentPhase() != common.ActionPhase_ACTION_PHASE_SUCCEEDED {
 		return nil, fmt.Errorf("run %s did not succeed (phase %s)", r.Name(), r.Phase())
+	}
+	if r.details == nil {
+		return nil, fmt.Errorf("run %s has no resolved task spec; outputs cannot be converted", r.Name())
 	}
 
 	var outputs *taskpb.Outputs
@@ -408,9 +422,66 @@ func isTerminalPhase(phase common.ActionPhase) bool {
 	case common.ActionPhase_ACTION_PHASE_SUCCEEDED,
 		common.ActionPhase_ACTION_PHASE_FAILED,
 		common.ActionPhase_ACTION_PHASE_ABORTED,
-		common.ActionPhase_ACTION_PHASE_TIMED_OUT:
+		common.ActionPhase_ACTION_PHASE_TIMED_OUT,
+		common.ActionPhase_ACTION_PHASE_RECOVERED:
 		return true
 	default:
 		return false
 	}
+}
+
+// GetRun attaches a RunHandle to an existing run by name, the equivalent of
+// the Python SDK's flyte.remote.Run.get. Project and domain default to the
+// Init values; override with WithProject/WithDomain (other options are
+// ignored):
+//
+//	run, err := flyte.GetRun(ctx, "my-run-001")
+func GetRun(ctx context.Context, name string, opts ...RunOption) (*RunHandle, error) {
+	clientset, cfg, err := getClientset()
+	if err != nil {
+		return nil, err
+	}
+	if name == "" {
+		return nil, fmt.Errorf("run name is required")
+	}
+
+	o := newRunOptions(opts)
+	project := firstNonEmpty(o.project, cfg.Project)
+	domain := firstNonEmpty(o.domain, cfg.Domain)
+	if project == "" || domain == "" {
+		return nil, fmt.Errorf("project and domain are required (set them in flyte.Init or via WithProject/WithDomain)")
+	}
+
+	resp, err := clientset.RunServiceClient().GetRunDetails(ctx, connect.NewRequest(&workflow.GetRunDetailsRequest{
+		RunId: &common.RunIdentifier{Org: cfg.Org, Project: project, Domain: domain, Name: name},
+	}))
+	if err != nil {
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return nil, fmt.Errorf("run %s not found in %s/%s: %w", name, project, domain, err)
+		}
+		return nil, fmt.Errorf("failed to get run %s: %w", name, err)
+	}
+	action := resp.Msg.GetDetails().GetAction()
+	if action.GetId().GetRun() == nil {
+		return nil, fmt.Errorf("invalid GetRunDetails response: missing run identifier")
+	}
+
+	// The resolved task spec on the root action drives output conversion the
+	// same way the spec fetched by GetTask does for freshly launched runs.
+	var details *TaskDetails
+	if spec := action.GetTask(); spec != nil {
+		details = &TaskDetails{pb: &taskpb.TaskDetails{Spec: spec}}
+	}
+
+	return &RunHandle{
+		pb: &workflow.Run{Action: &workflow.Action{
+			Id:       action.GetId(),
+			Metadata: action.GetMetadata(),
+			Status:   action.GetStatus(),
+		}},
+		details:   details,
+		clientset: clientset,
+		config:    cfg,
+		phase:     action.GetStatus().GetPhase(),
+	}, nil
 }
