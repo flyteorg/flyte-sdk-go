@@ -226,6 +226,41 @@ outputs, err := run.Outputs(ctx) // map[string]any, e.g. {"o0": 49}
 err = run.Abort(ctx, "superseded")
 ```
 
+## Existing runs, actions, and conditions
+
+`GetRun` attaches a handle to a run launched elsewhere; `ListActions` /
+`GetAction` expose the run's individual actions (tasks, conditions, traces)
+with typed status accessors:
+
+```go
+run, err := flyte.GetRun(ctx, "my-run-001")
+
+actions, err := run.ListActions(ctx) // lightweight: identity, metadata, phase
+a, err := run.GetAction(ctx, "a1")   // full details: error/abort/signal info, attempts
+
+a.Phase()          // "ACTION_PHASE_RUNNING"
+a.Type()           // flyte.ActionTypeTask | ActionTypeCondition | ActionTypeTrace
+a.Attempts()       // attempt count so far
+a.ErrorInfo()      // failure message + USER/SYSTEM kind, nil unless failed
+a.AbortInfo()      // abort reason + principal, nil unless aborted
+a.RecoveredFrom()  // source action when recovered, else nil
+err = a.Refresh(ctx)            // re-poll a live action
+err = a.Wait(ctx)               // block until terminal
+err = a.Abort(ctx, "stuck")     // abort this action only
+```
+
+Condition actions (created by tasks via `flyte.new_condition` in Python) pause
+until signalled:
+
+```go
+conds, err := run.ListConditions(ctx)
+cond, err := run.GetCondition(ctx, "approval-gate")
+fmt.Println(cond.Prompt(), cond.Description())
+
+err = cond.Signal(ctx, true) // bool, string, integer, or float,
+                             // validated server-side against the declared type
+```
+
 ## Package layout
 
 ```
