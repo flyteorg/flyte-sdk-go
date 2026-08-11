@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/oauth2"
 
-	"github.com/flyteorg/flyte/flytestdlib/config"
+	"github.com/flyteorg/flyte/v2/flytestdlib/config"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/auth"
 	"github.com/unionai/flyte-sdk-go/flyte/client/authtest"
 	"github.com/unionai/flyte-sdk-go/flyte/client/cache"

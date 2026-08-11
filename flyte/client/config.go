@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/flyteorg/flyte/flytestdlib/config"
-	"github.com/flyteorg/flyte/flytestdlib/logger"
+	"github.com/flyteorg/flyte/v2/flytestdlib/config"
+	"github.com/flyteorg/flyte/v2/flytestdlib/logger"
 
 	"github.com/unionai/flyte-sdk-go/flyte/client/deviceflow"
 	"github.com/unionai/flyte-sdk-go/flyte/client/pkce"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	stdconfig "github.com/flyteorg/flyte/flytestdlib/config"
+	stdconfig "github.com/flyteorg/flyte/v2/flytestdlib/config"
 	"gopkg.in/yaml.v3"
 
 	client "github.com/unionai/flyte-sdk-go/flyte/client"

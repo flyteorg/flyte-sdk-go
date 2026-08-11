@@ -6,8 +6,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/flyteorg/flyte/flytestdlib/config"
-	"github.com/flyteorg/flyte/flytestdlib/logger"
+	"github.com/flyteorg/flyte/v2/flytestdlib/config"
+	"github.com/flyteorg/flyte/v2/flytestdlib/logger"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/auth/authconnect"
 	"github.com/unionai/flyte-sdk-go/flyte/client/cache"
 	"github.com/unionai/flyte-sdk-go/flyte/client/oauth"
