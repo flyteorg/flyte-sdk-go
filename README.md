@@ -4,7 +4,6 @@
 [Python `flyte` SDK](https://github.com/flyteorg/flyte-sdk).**
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/unionai/flyte-sdk-go.svg)](https://pkg.go.dev/github.com/unionai/flyte-sdk-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/unionai/flyte-sdk-go)](https://goreportcard.com/report/github.com/unionai/flyte-sdk-go)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/unionai/flyte-sdk-go)](go.mod)
 [![License](https://img.shields.io/badge/license-Apache%202.0-orange)](LICENSE)
 
