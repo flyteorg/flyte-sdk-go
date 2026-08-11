@@ -37,4 +37,3 @@ go.work.sum
 .vscode/
 
 # Local development notes, not part of the SDK
-CLAUDE.md
