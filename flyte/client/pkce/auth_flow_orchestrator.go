@@ -12,7 +12,7 @@ import (
 
 	"github.com/unionai/flyte-sdk-go/flyte/client/tokenorchestrator"
 
-	"github.com/flyteorg/flyte/flytestdlib/logger"
+	"github.com/flyteorg/flyte/v2/flytestdlib/logger"
 )
 
 const (

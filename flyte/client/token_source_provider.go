@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	"connectrpc.com/connect"
-	"github.com/flyteorg/flyte/flytestdlib/logger"
+	"github.com/flyteorg/flyte/v2/flytestdlib/logger"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/auth"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/auth/authconnect"
 	"github.com/unionai/flyte-sdk-go/flyte/client/cache"

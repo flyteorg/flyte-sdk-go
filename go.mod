@@ -1,11 +1,10 @@
 module github.com/unionai/flyte-sdk-go
 
-go 1.26.3
+go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
-	github.com/flyteorg/flyte/flytestdlib v1.16.3
-	github.com/flyteorg/flyte/v2 v2.0.37
+	github.com/flyteorg/flyte/v2 v2.0.40
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/stretchr/testify v1.11.1
@@ -47,7 +46,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260724162435-b2f20204f0df // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	google.golang.org/grpc v1.83.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

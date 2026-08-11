@@ -14,7 +14,7 @@ import (
 	"golang.org/x/oauth2"
 	"k8s.io/apimachinery/pkg/util/json"
 
-	"github.com/flyteorg/flyte/flytestdlib/config"
+	"github.com/flyteorg/flyte/v2/flytestdlib/config"
 	"github.com/unionai/flyte-sdk-go/flyte/client/cache"
 	"github.com/unionai/flyte-sdk-go/flyte/client/oauth"
 	"github.com/unionai/flyte-sdk-go/flyte/client/tokenorchestrator"
