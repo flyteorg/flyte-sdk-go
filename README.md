@@ -70,6 +70,15 @@ token-printing command; otherwise the browser PKCE flow is used.
 - **Monitoring** — `Wait` blocks to terminal phase; `Watch` streams updates
   over the same `WatchActionDetails` stream the Python SDK uses; `Abort`
   cancels a run.
+- **Existing runs and actions** — `GetRun` attaches to a run launched
+  elsewhere; `ListActions`/`GetAction` expose each action (task, condition,
+  trace) with typed phase, attempt, and error/abort/signal accessors, plus
+  per-action `Watch`, `Wait`, and `Abort`.
+- **Conditions** — list a run's approval gates and `Signal` them with a bool,
+  string, integer, or float, like the Python SDK's condition workflow.
+- **Recovery and reruns** — `WithRecover` reuses succeeded actions from a
+  failed run (with `WithForceRerunActions` as the escape hatch);
+  `WithRelation` records rerun provenance.
 - **All the auth flows** — PKCE (default, browser), API key, OAuth2
   client credentials, device flow, and external token commands.
 - **Config-file compatible** — reads flytectl/uctl-style `config.yaml` files
@@ -264,7 +273,8 @@ err = cond.Signal(ctx, true) // bool, string, integer, or float,
 ## Package layout
 
 ```
-flyte/            Public SDK: Init, Config, GetTask, Run, RunHandle
+flyte/            Public SDK: Init, Config, GetTask, Run, GetRun, RunHandle,
+                  Action, Condition
 flyte/client/     Connect clientset, auth flows (PKCE, device flow, client
                   credentials, external command), token caching
 example/          Runnable end-to-end example
