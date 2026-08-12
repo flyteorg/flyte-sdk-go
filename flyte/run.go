@@ -11,8 +11,10 @@ import (
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/common"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/core"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/dataproxy"
+	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/dataproxy/dataproxyconnect"
 	taskpb "github.com/flyteorg/flyte/v2/gen/go/flyteidl2/task"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/workflow"
+	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/workflow/workflowconnect"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	client "github.com/unionai/flyte-sdk-go/flyte/client"
@@ -366,42 +368,56 @@ func watchActionPhases(ctx context.Context, clientset *client.RunClientset, acti
 }
 
 // Outputs waits for the run to complete successfully and returns its outputs
-// as native Go values keyed by output name (e.g. "o0").
+// as native Go values keyed by output name (e.g. "o0"). Runs that finished in
+// ACTION_PHASE_RECOVERED (their result was reused from a source run) are
+// treated as successful, matching Wait and the Python SDK's Run.outputs.
 func (r *RunHandle) Outputs(ctx context.Context) (map[string]any, error) {
 	if !isTerminalPhase(r.currentPhase()) {
 		if err := r.Wait(ctx); err != nil {
 			return nil, err
 		}
 	}
-	if r.currentPhase() != common.ActionPhase_ACTION_PHASE_SUCCEEDED {
+	if !isSuccessPhase(r.currentPhase()) {
 		return nil, fmt.Errorf("run %s did not succeed (phase %s)", r.Name(), r.Phase())
 	}
 	if r.details == nil {
 		return nil, fmt.Errorf("run %s has no resolved task spec; outputs cannot be converted", r.Name())
 	}
 
-	var outputs *taskpb.Outputs
-	resp, err := r.clientset.DataProxyServiceClient().GetActionData(ctx, connect.NewRequest(&dataproxy.GetActionDataRequest{
-		ActionId: r.pb.GetAction().GetId(),
+	outputs, err := fetchOutputs(ctx, r.clientset.DataProxyServiceClient(), r.clientset.RunServiceClient(), r.pb.GetAction().GetId())
+	if err != nil {
+		return nil, err
+	}
+	return convertOutputs(ctx, r.details, outputs)
+}
+
+// fetchOutputs retrieves an action's raw outputs, preferring the data proxy
+// like the Python SDK (flyte.remote ActionDetails._fetch_action_data). It
+// falls back to the legacy RunService.GetActionData when the data proxy is
+// missing on older control planes (CodeUnimplemented) or has no execution
+// data recorded for the action (CodeNotFound): cache-hit and recovered
+// actions never executed, so the data proxy's per-attempt records are empty
+// and their outputs are served from the action's stored outputs URI by the
+// run service instead.
+func fetchOutputs(ctx context.Context, dataProxy dataproxyconnect.DataProxyServiceClient, runService workflowconnect.RunServiceClient, actionID *common.ActionIdentifier) (*taskpb.Outputs, error) {
+	resp, err := dataProxy.GetActionData(ctx, connect.NewRequest(&dataproxy.GetActionDataRequest{
+		ActionId: actionID,
 	}))
-	switch {
-	case err == nil:
-		outputs = resp.Msg.GetOutputs()
-	case connect.CodeOf(err) == connect.CodeUnimplemented:
-		// Mirror Run's inline-inputs fallback for control planes without the
-		// data proxy.
-		legacy, lerr := r.clientset.RunServiceClient().GetActionData(ctx, connect.NewRequest(&workflow.GetActionDataRequest{
-			ActionId: r.pb.GetAction().GetId(),
+	if err == nil {
+		return resp.Msg.GetOutputs(), nil
+	}
+	switch connect.CodeOf(err) {
+	case connect.CodeUnimplemented, connect.CodeNotFound:
+		legacy, lerr := runService.GetActionData(ctx, connect.NewRequest(&workflow.GetActionDataRequest{
+			ActionId: actionID,
 		}))
 		if lerr != nil {
 			return nil, fmt.Errorf("failed to get run outputs: %w", lerr)
 		}
-		outputs = legacy.Msg.GetOutputs()
+		return legacy.Msg.GetOutputs(), nil
 	default:
 		return nil, fmt.Errorf("failed to get run outputs: %w", err)
 	}
-
-	return convertOutputs(ctx, r.details, outputs)
 }
 
 // Abort requests termination of the run. The reason is recorded on the run.
@@ -423,6 +439,19 @@ func isTerminalPhase(phase common.ActionPhase) bool {
 		common.ActionPhase_ACTION_PHASE_FAILED,
 		common.ActionPhase_ACTION_PHASE_ABORTED,
 		common.ActionPhase_ACTION_PHASE_TIMED_OUT,
+		common.ActionPhase_ACTION_PHASE_RECOVERED:
+		return true
+	default:
+		return false
+	}
+}
+
+// isSuccessPhase reports whether phase is a successful terminal phase.
+// ACTION_PHASE_RECOVERED counts: it marks an action whose result was reused
+// from a source run without re-executing.
+func isSuccessPhase(phase common.ActionPhase) bool {
+	switch phase {
+	case common.ActionPhase_ACTION_PHASE_SUCCEEDED,
 		common.ActionPhase_ACTION_PHASE_RECOVERED:
 		return true
 	default:
