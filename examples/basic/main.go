@@ -37,7 +37,7 @@ func main() {
 	}
 	if (cfg.Endpoint == "" && cfg.APIKey == "") || cfg.Project == "" {
 		log.Fatal("set FLYTE_ENDPOINT (or FLYTE_API_KEY) and FLYTE_PROJECT, e.g.\n" +
-			"  FLYTE_ENDPOINT=my-org.example.com FLYTE_PROJECT=my-project go run ./example")
+			"  FLYTE_ENDPOINT=my-org.example.com FLYTE_PROJECT=my-project go run ./examples/basic")
 	}
 	if cmd := os.Getenv("FLYTE_AUTH_COMMAND"); cmd != "" {
 		cfg.AuthType = flyte.AuthTypeExternalCommand

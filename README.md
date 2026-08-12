@@ -44,13 +44,17 @@ func main() {
 }
 ```
 
-[`example/main.go`](example/main.go) is a fuller, runnable version against a
-live cluster:
+[`examples/`](examples/) holds runnable versions against a live cluster —
+from the [basic quickstart](examples/basic) to
+[answering approval conditions](examples/human-approval) and
+[recovering failed runs](examples/recover-run), several mirroring the
+[flyte-sdk-rs examples](https://github.com/flyteorg/flyte-sdk-rs/tree/main/examples)
+from the launching side:
 
 ```bash
 FLYTE_ENDPOINT=my-org.example.com \
 FLYTE_PROJECT=my-project FLYTE_DOMAIN=development \
-go run ./example
+go run ./examples/basic
 ```
 
 Set `FLYTE_API_KEY` for headless auth, or `FLYTE_AUTH_COMMAND` to supply a
@@ -276,7 +280,7 @@ flyte/            Public SDK: Init, Config, GetTask, Run, GetRun, RunHandle,
                   Action, Condition
 flyte/client/     Connect clientset, auth flows (PKCE, device flow, client
                   credentials, external command), token caching
-example/          Runnable end-to-end example
+examples/         Runnable examples against a live cluster (several mirror flyte-sdk-rs)
 ```
 
 The SDK talks to the control plane over the [Connect

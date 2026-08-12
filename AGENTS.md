@@ -34,7 +34,9 @@ flyte/            Public SDK, one file per concern:
 flyte/client/     Connect clientset builder, interceptors, auth flows (PKCE,
                   device flow, client credentials, API key, external command),
                   token caching (keyring/in-memory)
-example/          Runnable end-to-end example against a live cluster
+examples/         Runnable examples against a live cluster, one directory per
+                  scenario (several mirror the flyte-sdk-rs examples from the
+                  launching side; see examples/README.md)
 ```
 
 ## Design rules
