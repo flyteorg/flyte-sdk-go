@@ -1,0 +1,11 @@
+# Keep the worker image build context (and the image tag hash) down to Go
+# sources: local build outputs and tool droppings must not change the tag.
+**/bin/
+**/.git/
+**/.flyte/
+**/__pycache__/
+**/*.pyc
+**/_generated_interface.py
+**/task.py
+**/workflow.py
+**/*.md

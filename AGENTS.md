@@ -1,11 +1,19 @@
 # Agent guide: flyte-sdk-go
 
-Go SDK for Flyte v2: launch, monitor, signal, and recover runs of tasks
-deployed on a Flyte control plane. It is a **remote-control SDK, not a task
-runtime** — task authoring and execution stay in the
-[Python SDK](https://github.com/flyteorg/flyte-sdk); Go launches deployed
-tasks by reference (`GetTask` + `Run`). Keep that boundary: do not add task
-authoring, registration, or deployment APIs.
+Go SDK for Flyte v2, in **two halves**:
+
+- **Remote control** (`flyte/`): launch, monitor, signal, and recover runs of
+  tasks deployed on a Flyte control plane (`GetTask` + `Run`).
+- **Task runtime** (`flyte/runtime`): author tasks as plain Go functions and
+  run them inside containers — the Go counterpart of
+  [flyte-sdk-rs](https://github.com/flyteorg/flyte-sdk-rs)'s worker.
+  Reusable-container ("actor") support lives in the separate
+  [github.com/unionai/union-reuse-go](https://github.com/unionai/union-reuse-go)
+  module (the Go analog of union-reuse), which depends on this repo — never
+  the other way around. Registration and **deployment stay in Python** via the
+  companion `python/flyteplugins-go` package (image build,
+  `describe-interface` discovery, reuse/actor config); do not add Go-side
+  deploy APIs without a design discussion.
 
 ## Commands
 
@@ -22,7 +30,7 @@ to `./flyte/` when iterating on the public API.
 ## Layout
 
 ```
-flyte/            Public SDK, one file per concern:
+flyte/            Launch SDK, one file per concern:
                   initialize.go (Init/Close, global clientset)
                   config.go     (Config, YAML config-file loading)
                   task.go       (TaskRef/TaskDetails, GetTask)
@@ -34,9 +42,18 @@ flyte/            Public SDK, one file per concern:
 flyte/client/     Connect clientset builder, interceptors, auth flows (PKCE,
                   device flow, client credentials, API key, external command),
                   token caching (keyring/in-memory)
-examples/         Runnable examples against a live cluster, one directory per
-                  scenario (several mirror the flyte-sdk-rs examples from the
-                  launching side; see examples/README.md)
+flyte/runtime/    Task runtime (import alias flyteruntime): RegisterTask +
+                  TaskEnvironment authoring, describe-interface descriptors,
+                  container arg/env contract (args.go), Go ⇄ literal codec
+                  (codec.go, msgpack structs), one-shot worker (worker.go,
+                  main.go), traces (trace.go + internal/controller informer
+                  over ActionsService), blob storage (internal/storage,
+                  gocloud.dev)
+python/flyteplugins-go/  Python companion: go_task() declares a Go worker as
+                  a Flyte task, builds the image, deploys via the Python SDK.
+examples/         Launching examples (top level) + authoring examples under
+                  examples/tasks/ (hello, traced). The reusable example lives
+                  with the reuse module in unionai/union-reuse-go.
 ```
 
 ## Design rules
@@ -59,6 +76,28 @@ examples/         Runnable examples against a live cluster, one directory per
 - **Wrap errors with context** (`fmt.Errorf("failed to ...: %w", err)`), and
   translate well-known codes into friendly messages where the caller can act
   (see `CodeAlreadyExists` in `Run`, `CodeNotFound` in `GetTask`/`GetRun`).
+
+### Runtime-specific rules (flyte/runtime)
+
+- **Wire contracts are shared, never changed unilaterally.** The container
+  arg/env contract (`args.go` ⇄ flyteplugins-go `container_args` ⇄
+  union-reuse-go's pool, which re-parses assignment argv with `ParseArgs`),
+  the descriptor JSON (version 1), the msgpack struct encoding (string-keyed,
+  declaration order, compact ints — mashumaro/rmp_serde-compatible), and the
+  sub-action naming algorithm (`hash.go`) are all shared with flyte-sdk-rs,
+  union-reuse(-go) and the Python SDK. Golden tests pin them; change any of
+  them only in lockstep with the other implementations.
+- **Task failure travels via error.pb; the worker exits 0.** User vs system
+  origin (`errors.go`) decides whose retry budget a failure spends — keep the
+  classification honest (a malformed assignment or storage failure is system,
+  a task-fn error or panic is user).
+- **The exported worker surface is union-reuse-go's API.** `ParseArgs`,
+  `ResolveConfigWithEnv`, `Execute`, `Storage`, `ResolveTask`, `OriginOf`,
+  `IsRetryAttempt`, `WantsInterface`, `PrintInterfaces` are consumed by that
+  external module — treat changes as cross-repo breaking changes.
+- Trace identity has no body-hash (unlike Rust's macro): editing a traced
+  function does not invalidate recordings — that is what `TraceVersioned` is
+  for. Keep that caveat loud in docs.
 
 ## Proto dependency
 

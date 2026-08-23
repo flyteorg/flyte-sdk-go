@@ -1,11 +1,16 @@
 # Examples
 
-Each folder is a self-contained `main` package showing one way to drive a
-Flyte control plane with the Go SDK. The SDK is a **remote-control SDK**:
-tasks are authored and deployed with the
-[Python SDK](https://github.com/flyteorg/flyte-sdk) or
-[Rust SDK](https://github.com/flyteorg/flyte-sdk-rs); Go launches, monitors,
-signals, and recovers runs of tasks already deployed.
+Two families:
+
+- **Launching** (this directory's top-level folders): drive a Flyte control
+  plane with the Go SDK — launch, monitor, signal, and recover runs of tasks
+  already deployed.
+- **Authoring** ([`tasks/`](tasks)): write the tasks themselves in Go with
+  `flyte/runtime`, including a traced (record/replay) task and a
+  reusable-container ("actor") task. See [`tasks/README.md`](tasks/README.md).
+
+The launching examples below assume the task was authored elsewhere (Python,
+Rust, or Go's `flyte/runtime`).
 
 Four of the examples deliberately mirror the
 [flyte-sdk-rs examples](https://github.com/flyteorg/flyte-sdk-rs/tree/main/examples):
