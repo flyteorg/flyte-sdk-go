@@ -15,4 +15,8 @@ _MODULE = Path(__file__).resolve().parent
 my_task, go_env = fgo.go_task(
     module_dir=_MODULE,
     binary="hello",
+    # This example is a package of the SDK's root module (no go.mod of its
+    # own), so the image build needs the whole module as context. A standalone
+    # user module needs only module_dir.
+    workspace=_MODULE.parent.parent.parent,
 )

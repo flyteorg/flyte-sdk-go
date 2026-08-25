@@ -17,5 +17,8 @@ _MODULE = Path(__file__).resolve().parent
 flaky, go_env = fgo.go_task(
     module_dir=_MODULE,
     binary="traced",
+    # This example is a package of the SDK's root module (no go.mod of its
+    # own), so the image build needs the whole module as context.
+    workspace=_MODULE.parent.parent.parent,
     retries=2,
 )
