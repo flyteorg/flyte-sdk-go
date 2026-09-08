@@ -1,6 +1,8 @@
 # Flyte Go SDK
 
-**Launch and monitor Flyte task runs from Go — control-plane parity with the
+**Launch and monitor Flyte task runs from Go — and author the tasks
+themselves in Go, running as single-shot or reusable ("warm") containers.
+Control-plane parity with the
 [Python `flyte` SDK](https://github.com/flyteorg/flyte-sdk).**
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/unionai/flyte-sdk-go.svg)](https://pkg.go.dev/github.com/unionai/flyte-sdk-go)
@@ -59,6 +61,43 @@ go run ./examples/basic
 
 Set `FLYTE_API_KEY` for headless auth, or `FLYTE_AUTH_COMMAND` to supply a
 token-printing command; otherwise the browser PKCE flow is used.
+
+## Authoring tasks in Go
+
+The [`flyte/runtime`](flyte/runtime) package is the worker-side half: tasks
+are plain Go functions, and the compiled binary is the task container. The
+developer experience mirrors the original flyte-go-sdk prototype; the runtime
+contract mirrors [flyte-sdk-rs](https://github.com/flyteorg/flyte-sdk-rs).
+
+```go
+import flyteruntime "github.com/unionai/flyte-sdk-go/flyte/runtime"
+
+var env = &flyteruntime.TaskEnvironment{Name: "hello_env"}
+
+func addNumbers(ctx flyteruntime.Context, a, b int64) (int64, error) { return a + b, nil }
+
+func init() {
+	flyteruntime.RegisterTask("add", addNumbers, env, flyteruntime.WithInputNames("a", "b"))
+}
+
+func main() { flyteruntime.Main() }
+```
+
+The binary is self-describing (`<binary> describe-interface`); the
+[`flyteplugins-go`](python/flyteplugins-go) Python companion reads that
+descriptor, builds the image, and deploys through the Python SDK — the Go
+signature is the only place the interface is written down. Traced steps
+(`flyteruntime.Trace[T](ctx, fn, args...)`) are recorded on first success and
+**replayed instead of re-run** when a task retries.
+
+**Reusable containers**: swap `flyteruntime.Main()` for `reuse.Main()` from
+the separate [`union-reuse-go`](https://github.com/unionai/union-reuse-go)
+module and give the task a `flyte.ReusePolicy` in `task.py` — the backend
+then streams actions to a pool of warm replicas instead of scheduling a pod
+per action.
+
+See [`examples/tasks/`](examples/tasks) for runnable hello and traced
+examples; the reusable example lives with the reuse module.
 
 ## Features
 

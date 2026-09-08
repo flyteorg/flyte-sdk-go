@@ -11,7 +11,7 @@
 # Compiled example/CLI binaries (extensionless, from `go build`)
 /example/main
 /example/example
-/bin/
+bin/
 
 # Test binary, built with `go test -c`
 *.test
@@ -28,6 +28,10 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
+
+# Python
+__pycache__/
+*.pyc
 
 # env file
 .env

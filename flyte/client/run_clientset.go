@@ -5,6 +5,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/actions/actionsconnect"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/auth/authconnect"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/dataproxy/dataproxyconnect"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/task/taskconnect"
@@ -21,6 +22,7 @@ type RunClientset struct {
 	taskServiceClient      taskconnect.TaskServiceClient
 	dataProxyServiceClient dataproxyconnect.DataProxyServiceClient
 	authMetadataClient     authconnect.AuthMetadataServiceClient
+	actionsServiceClient   actionsconnect.ActionsServiceClient
 }
 
 // RunServiceClient retrieves the RunServiceClient
@@ -43,6 +45,12 @@ func (c *RunClientset) DataProxyServiceClient() dataproxyconnect.DataProxyServic
 // AuthMetadataClient retrieves the anonymous auth metadata client.
 func (c *RunClientset) AuthMetadataClient() authconnect.AuthMetadataServiceClient {
 	return c.authMetadataClient
+}
+
+// ActionsServiceClient retrieves the unified ActionsService client used by the
+// task runtime to record and watch trace actions.
+func (c *RunClientset) ActionsServiceClient() actionsconnect.ActionsServiceClient {
+	return c.actionsServiceClient
 }
 
 // Close releases client resources. Connect clients ride on a shared
@@ -117,5 +125,6 @@ func (rb *RunClientsetBuilder) Build(ctx context.Context) (*RunClientset, error)
 		taskServiceClient:      taskconnect.NewTaskServiceClient(httpClient, url, opts...),
 		dataProxyServiceClient: dataproxyconnect.NewDataProxyServiceClient(httpClient, url, opts...),
 		authMetadataClient:     authMetadataClient,
+		actionsServiceClient:   actionsconnect.NewActionsServiceClient(httpClient, url, opts...),
 	}, nil
 }
