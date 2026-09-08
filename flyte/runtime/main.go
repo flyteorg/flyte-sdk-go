@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,8 +32,11 @@ func PrintInterfaces() {
 // selected task, and uploads outputs.pb or error.pb.
 //
 // Task failure travels via error.pb — the process exits 0 either way, matching
-// the Python and Rust runtimes. A nonzero exit means the worker could not even
-// start (e.g. run from a shell with no configuration).
+// the Python and Rust runtimes. A nonzero exit means the worker could not do
+// its job as a worker: it could not start (e.g. run from a shell with no
+// configuration), or it could not publish the result document (neither
+// outputs.pb nor error.pb reached storage — see ErrPublish), so the backend
+// must not read the exit as "report delivered".
 func Main() {
 	os.Exit(runMain())
 }
@@ -57,8 +61,12 @@ func runMain() int {
 	ctx := context.Background()
 	store := NewStorage()
 	// The task's own failure is reported via error.pb inside Execute; the
-	// container itself exits 0.
-	_ = Execute(ctx, task, store, cfg, IsRetryAttempt(envNonEmpty))
+	// container itself exits 0. Only a failure to publish that report is the
+	// worker's own failure, and the exit code is the one channel left.
+	if err := Execute(ctx, task, store, cfg, IsRetryAttempt(envNonEmpty)); errors.Is(err, ErrPublish) {
+		fmt.Fprintf(os.Stderr, "flyte worker: %v\n", err)
+		return 1
+	}
 	return 0
 }
 

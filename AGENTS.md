@@ -90,7 +90,14 @@ examples/         Launching examples (top level) + authoring examples under
 - **Task failure travels via error.pb; the worker exits 0.** User vs system
   origin (`errors.go`) decides whose retry budget a failure spends — keep the
   classification honest (a malformed assignment or storage failure is system,
-  a task-fn error or panic is user).
+  a task-fn error or panic is user). The one exception is failing to publish
+  the result document itself: `Execute` then returns an `ErrPublish`-wrapped
+  system error (best-effort `error.pb`) and `Main` exits nonzero, because a
+  zero exit with neither `outputs.pb` nor `error.pb` would read as "reported".
+- **Traced calls are drained before an action completes.** `Execute` waits on
+  `runtimeState.inflight` after the task returns, so a `Future` the task never
+  `Get`s still finishes recording; error-only traces replay by skipping the
+  body (the recording is the result).
 - **The exported worker surface is union-reuse-go's API.** `ParseArgs`,
   `ResolveConfigWithEnv`, `Execute`, `Storage`, `ResolveTask`, `OriginOf`,
   `IsRetryAttempt`, `WantsInterface`, `PrintInterfaces` are consumed by that
@@ -98,6 +105,17 @@ examples/         Launching examples (top level) + authoring examples under
 - Trace identity has no body-hash (unlike Rust's macro): editing a traced
   function does not invalidate recordings — that is what `TraceVersioned` is
   for. Keep that caveat loud in docs.
+
+## Dependencies
+
+`flyte/runtime` pulls `gocloud.dev` (and through it the AWS, GCP, Azure and
+OpenTelemetry trees) into the root `go.mod`. That is a deliberate trade-off:
+launch-side consumers that never import `flyte/runtime` link none of it, but
+every consumer inherits the module graph, `go.sum` and vulnerability-scan
+surface. The alternative — a nested Go module for `flyte/runtime` — was
+rejected for v1 because it costs cross-module version coordination with
+union-reuse-go on every release. Revisit if the graph becomes a problem for
+launch-only users.
 
 ## Proto dependency
 

@@ -32,6 +32,16 @@ import (
 //
 // Outside a worker (local runs, tests) or inside another traced call, fn just
 // runs — no recording, matching the Rust SDK's local mode.
+//
+// fn may also be error-only, func(Context, ...inputs) error; then T carries
+// no information and Get returns the zero T (use Trace[struct{}]). Such a step
+// still records success, and a retry skips its body — which is the point for
+// side-effecting steps.
+//
+// The returned Future runs in the background. The task may return before
+// calling Get; the runtime waits for every traced call to finish recording
+// before the action completes, so a dropped Future costs nothing but its
+// result. A traced call that never returns therefore holds the action open.
 func Trace[T any](ctx Context, fn any, args ...any) *Future[T] {
 	return TraceVersioned[T](ctx, "v1", fn, args...)
 }
@@ -41,7 +51,14 @@ func Trace[T any](ctx Context, fn any, args ...any) *Future[T] {
 // recordings invisible, forcing a re-run.
 func TraceVersioned[T any](ctx Context, version string, fn any, args ...any) *Future[T] {
 	fut := newFuture[T]()
+	state := stateFrom(ctx)
+	if state != nil {
+		state.inflight.Add(1)
+	}
 	go func() {
+		if state != nil {
+			defer state.inflight.Done()
+		}
 		val, err := runTraced[T](ctx, version, fn, args)
 		fut.complete(val, err)
 	}()
@@ -117,7 +134,13 @@ func runTraced[T any](ctx Context, version string, fn any, args []any) (T, error
 	if found != nil {
 		if found.Failed {
 			slog.Info("trace previously failed; re-running", "action", actionName)
-		} else if found.OutputsURI != "" && tr.outputType != nil {
+		} else if tr.outputType == nil {
+			// An error-only step records success with no outputs: the recording
+			// itself is the result. Replay means not running the body again —
+			// this is what makes side-effecting steps safe across retries.
+			slog.Info("replaying recorded trace", "action", actionName)
+			return zero, nil
+		} else if found.OutputsURI != "" {
 			data, err := state.storage.Get(ctx, found.OutputsURI)
 			if err != nil {
 				return zero, SystemErrorf("trace %s: recorded outputs fetch failed: %w", tr.shortName, err)
@@ -202,7 +225,7 @@ func newTracedCall(fn any, args []any, want reflect.Type) (*tracedCall, error) {
 		return nil, fmt.Errorf("Trace: fn must be a function, got %T", fn)
 	}
 	ft := fv.Type()
-	if ft.NumIn() < 1 || (!ft.In(0).Implements(ctxType) && ft.In(0) != ctxType) {
+	if ft.NumIn() < 1 || !acceptsContext(ft.In(0)) {
 		return nil, fmt.Errorf("Trace %s: first parameter must be Context", funcName(fv))
 	}
 	if ft.IsVariadic() {

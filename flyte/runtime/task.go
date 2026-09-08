@@ -122,6 +122,14 @@ var (
 	inputNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
+// acceptsContext reports whether a plain context.Context can be passed as a
+// parameter of type t: Context itself, or an interface it satisfies. A concrete
+// type that happens to implement context.Context is rejected — run/invoke
+// always pass a context.Context value, and reflect.Call would panic.
+func acceptsContext(t reflect.Type) bool {
+	return ctxType.AssignableTo(t)
+}
+
 // newTask validates fn's signature and derives the task's interface.
 func newTask(name string, fn any, env *TaskEnvironment, opts ...TaskOption) (*Task, error) {
 	if name == "" || !inputNameRe.MatchString(name) {
@@ -132,7 +140,7 @@ func newTask(name string, fn any, env *TaskEnvironment, opts ...TaskOption) (*Ta
 	if fv.Kind() != reflect.Func {
 		return nil, fmt.Errorf("task %q: fn must be a function, got %T", name, fn)
 	}
-	if ft.NumIn() < 1 || !ft.In(0).Implements(ctxType) && ft.In(0) != ctxType {
+	if ft.NumIn() < 1 || !acceptsContext(ft.In(0)) {
 		return nil, fmt.Errorf("task %q: first parameter must be flyteruntime.Context (context.Context)", name)
 	}
 	if ft.IsVariadic() {

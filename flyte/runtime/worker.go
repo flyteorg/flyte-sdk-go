@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -34,6 +36,11 @@ type runtimeState struct {
 	isRetry    bool
 
 	seq sequencer
+
+	// Traced calls started by the task: Execute drains them after the task
+	// body returns so an abandoned Future (never Get()'d) still finishes
+	// recording before the informer is finalized and the process exits.
+	inflight sync.WaitGroup
 
 	// The trace controller is built lazily on first Trace call: a task that
 	// never traces needs no control-plane connection at all.
@@ -86,14 +93,21 @@ func (s *runtimeState) controller(ctx context.Context) (*controller.Controller, 
 	return s.ctrl, s.ctrlErr
 }
 
+// ErrPublish marks an Execute error caused by the runtime failing to publish
+// the action's result document (outputs.pb or error.pb). It is always a system
+// fault. Callers that report phases themselves should treat it as "no valid
+// report exists"; the one-shot worker exits nonzero on it (see Main).
+var ErrPublish = errors.New("failed to publish result document")
+
 // Execute runs one action to completion: fetch inputs, run the task, upload
 // outputs.pb or error.pb.
 //
 // The returned error is the task's own result, so a caller that must report a
 // phase elsewhere — the reusable container answering the fasttask plugin over
 // its heartbeat — can tell success from failure (and user from system fault
-// via OriginOf). The one-shot worker ignores it: there the artifacts are the
-// report.
+// via OriginOf). The one-shot worker mostly ignores it: there the artifacts are
+// the report — except when publishing them failed (errors.Is(err, ErrPublish)),
+// which is a system fault regardless of how the task itself fared.
 func Execute(ctx context.Context, t *Task, store *Storage, cfg ResolvedConfig, isRetry bool) error {
 	state := &runtimeState{
 		storage:    store.inner,
@@ -127,24 +141,31 @@ func Execute(ctx context.Context, t *Task, store *Storage, cfg ResolvedConfig, i
 			err = state.storage.Put(ctx, uri, data)
 		}
 		if err != nil {
+			// The task succeeded but the backend would see no outputs.pb. Report
+			// a system failure through error.pb (best effort) so the action fails
+			// visibly instead of hanging on a missing artifact.
 			slog.Error("outputs upload failed", "task", t.name, "error", err)
-			outcome = SystemErrorf("outputs upload failed: %w", err)
+			outcome = SystemErrorf("%w: outputs upload failed: %w", ErrPublish, err)
+			if perr := putErrorDocument(ctx, state.storage, cfg.OutputPath, outcome); perr != nil {
+				slog.Error("error upload failed", "task", t.name, "error", perr)
+			}
 		} else {
 			slog.Info("task succeeded, outputs uploaded", "task", t.name)
 		}
 	} else {
 		slog.Error("task failed", "task", t.name, "error", runErr)
-		uri := istorage.Join(cfg.OutputPath, "error.pb")
-		data, err := proto.Marshal(errorDocument(runErr))
-		if err == nil {
-			err = state.storage.Put(ctx, uri, data)
-		}
-		if err != nil {
-			slog.Error("error upload failed", "task", t.name, "error", err)
-		}
 		outcome = runErr
+		if perr := putErrorDocument(ctx, state.storage, cfg.OutputPath, runErr); perr != nil {
+			// Neither outputs.pb nor error.pb exists now: a system fault, whatever
+			// the task's own error was. Keep runErr in the chain for callers.
+			slog.Error("error upload failed", "task", t.name, "error", perr)
+			outcome = SystemErrorf("%w: error upload failed: %w (task error: %w)", ErrPublish, perr, runErr)
+		}
 	}
 
+	// Drain traced calls the task left running (see runtimeState.inflight).
+	// Their results are already lost to the task; their recordings need not be.
+	state.inflight.Wait()
 	if state.ctrl != nil {
 		state.ctrl.Finalize(cfg.ActionName)
 	}
@@ -159,16 +180,12 @@ func OriginOf(err error) ErrorOrigin {
 	return classify(err).Origin
 }
 
-// writeErrorDocument writes err as error.pb under outputPath; used by Main for
-// failures that happen outside Execute.
-func writeErrorDocument(ctx context.Context, store *Storage, outputPath string, err error) {
+// putErrorDocument writes err as error.pb under outputPath.
+func putErrorDocument(ctx context.Context, store *istorage.Storage, outputPath string, err error) error {
 	uri := istorage.Join(outputPath, "error.pb")
 	data, merr := proto.Marshal(errorDocument(err))
 	if merr != nil {
-		slog.Error("failed to marshal error document", "error", merr)
-		return
+		return fmt.Errorf("failed to marshal error document: %w", merr)
 	}
-	if perr := store.inner.Put(ctx, uri, data); perr != nil {
-		slog.Error("error upload failed", "error", perr)
-	}
+	return store.Put(ctx, uri, data)
 }

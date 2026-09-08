@@ -71,6 +71,28 @@ func TestPrimitiveLiteralRoundtrips(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// Named primitive types register fine (validation is Kind-based), so decoding
+// must produce a value of the declared type — reflect.Call panics on a plain
+// string handed to a `type Label string` parameter.
+type (
+	namedLabel string
+	namedFlag  bool
+	namedCount int32
+	namedRatio float32
+)
+
+func TestNamedPrimitiveTypesRoundtrip(t *testing.T) {
+	cases := []any{namedLabel("x"), namedFlag(true), namedCount(7), namedRatio(1.5)}
+	for _, v := range cases {
+		lit, err := toLiteral(reflect.ValueOf(v))
+		require.NoError(t, err)
+		out, err := fromLiteral(lit, reflect.TypeOf(v))
+		require.NoError(t, err)
+		assert.Equal(t, reflect.TypeOf(v), out.Type(), "decoded value must have the declared type")
+		assert.Equal(t, v, out.Interface())
+	}
+}
+
 func TestTypedInterfaceIsKeySorted(t *testing.T) {
 	intType := simpleLiteralType(corepb.SimpleType_INTEGER)
 	strType := simpleLiteralType(corepb.SimpleType_STRING)

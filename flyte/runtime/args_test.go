@@ -54,6 +54,14 @@ func TestParseArgs(t *testing.T) {
 		assert.Equal(t, "s3://in", cfg.InputsURI)
 	})
 
+	t.Run("flag=value form is not part of the contract", func(t *testing.T) {
+		// Shared with the Rust worker: split tokens only. Pinned so the form is
+		// not added here unilaterally.
+		cfg := ParseArgs([]string{"--inputs=s3://in", "--name", "a0"})
+		assert.Empty(t, cfg.InputsURI)
+		assert.Equal(t, "a0", cfg.ActionName)
+	})
+
 	t.Run("short flags", func(t *testing.T) {
 		cfg := ParseArgs([]string{"-i", "s3://in", "-o", "s3://out"})
 		assert.Equal(t, "s3://in", cfg.InputsURI)

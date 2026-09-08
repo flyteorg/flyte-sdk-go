@@ -40,6 +40,11 @@ func realValue(v string) string {
 // anything unrecognized) are skipped, known-but-unused flags swallow their
 // value, and --resolver ends parsing (everything after is Python resolver
 // business).
+//
+// Only split tokens ("--inputs", "<uri>") are recognized. The backend always
+// emits them that way and the Rust worker parses only that form, so
+// "--inputs=<uri>" is deliberately an unknown token: adding it here alone
+// would make the Go and Rust workers disagree on the same argv.
 func ParseArgs(args []string) WorkerConfig {
 	var cfg WorkerConfig
 	i := 0

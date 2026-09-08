@@ -44,6 +44,9 @@ func TestRegisterTaskRejectsBadSignatures(t *testing.T) {
 		"unsupported input":  func(ctx Context, a []int) error { return nil },
 		"unsupported output": func(ctx Context) (chan int, error) { return nil, nil },
 		"variadic":           func(ctx Context, a ...int64) error { return nil },
+		// Implements context.Context, but run passes a plain context.Context
+		// value: reflect.Call would panic at invocation time.
+		"concrete context param": func(ctx concreteCtx) error { return nil },
 	}
 	i := 0
 	for name, fn := range cases {
@@ -59,6 +62,31 @@ func TestRegisterTaskRejectsBadSignatures(t *testing.T) {
 	assert.Panics(t, func() {
 		RegisterTask("bad name!", func(ctx Context) error { return nil }, nil)
 	}, "invalid task name")
+}
+
+// concreteCtx is a concrete type implementing context.Context.
+type concreteCtx struct{ context.Context }
+
+func TestRegisterTaskAcceptsContextInterfaces(t *testing.T) {
+	// Any interface a context.Context satisfies is fine as the first parameter.
+	task := RegisterTask("ctx_iface", func(ctx interface{ Done() <-chan struct{} }) error { return nil }, nil)
+	_, err := task.run(context.Background(), nil)
+	require.NoError(t, err)
+}
+
+func TestTaskRunNamedPrimitiveTypes(t *testing.T) {
+	task := RegisterTask("run_named", func(ctx Context, l namedLabel, f namedFlag) (namedLabel, error) {
+		if f {
+			return l + "!", nil
+		}
+		return l, nil
+	}, nil, WithInputNames("l", "f"))
+
+	inputs, err := buildInputs([]string{"l", "f"}, reflectValues(namedLabel("hi"), namedFlag(true)))
+	require.NoError(t, err)
+	outputs, err := task.run(context.Background(), inputs)
+	require.NoError(t, err, "named string/bool parameters must not panic at call time")
+	assert.Equal(t, "hi!", outputs.GetLiterals()[0].GetValue().GetScalar().GetPrimitive().GetStringValue())
 }
 
 func TestRegisterTaskRejectsDuplicates(t *testing.T) {

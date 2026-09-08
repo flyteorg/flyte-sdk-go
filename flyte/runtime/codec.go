@@ -93,6 +93,10 @@ func primitiveOf(lit *corepb.Literal) *corepb.Primitive {
 
 // fromLiteral converts a Flyte literal back to a native Go value of type t.
 // Floats accept integer literals (Python's lenient int→float coercion).
+//
+// Every branch allocates a value of exactly t and sets into it: registration
+// accepts named types (`type Label string`) because it checks Kind, so the
+// value handed to fn.Call must be of the declared type, not the underlying one.
 func fromLiteral(lit *corepb.Literal, t reflect.Type) (reflect.Value, error) {
 	switch t.Kind() {
 	case reflect.Int, reflect.Int32, reflect.Int64:
@@ -123,13 +127,17 @@ func fromLiteral(lit *corepb.Literal, t reflect.Type) (reflect.Value, error) {
 		if !ok {
 			return reflect.Value{}, fmt.Errorf("expected string literal for %s", t)
 		}
-		return reflect.ValueOf(sv.StringValue), nil
+		out := reflect.New(t).Elem()
+		out.SetString(sv.StringValue)
+		return out, nil
 	case reflect.Bool:
 		bv, ok := primitiveOf(lit).GetValue().(*corepb.Primitive_Boolean)
 		if !ok {
 			return reflect.Value{}, fmt.Errorf("expected boolean literal for %s", t)
 		}
-		return reflect.ValueOf(bv.Boolean), nil
+		out := reflect.New(t).Elem()
+		out.SetBool(bv.Boolean)
+		return out, nil
 	case reflect.Struct:
 		s, ok := lit.GetValue().(*corepb.Literal_Scalar)
 		if !ok {

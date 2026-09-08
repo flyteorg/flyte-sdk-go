@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -72,7 +73,7 @@ type Controller struct {
 //   - _UNION_EAGER_API_KEY (or EAGER_API_KEY) set → authenticated client
 //     credentials against the key's endpoint.
 //   - otherwise _U_EP_OVERRIDE (default host.docker.internal:8090), http://
-//     when _U_INSECURE is truthy or the host looks local.
+//     when _U_INSECURE is truthy or the host is local (see localHost).
 func New(ctx context.Context, runID *RunIdentifier) (*Controller, error) {
 	client, err := buildClient(ctx)
 	if err != nil {
@@ -99,19 +100,43 @@ func buildClient(ctx context.Context) (actionsconnect.ActionsServiceClient, erro
 	if raw == "" {
 		raw = "host.docker.internal:8090"
 	}
-	endpoint := raw
-	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-		insecure := truthy(envNonEmpty("_U_INSECURE")) ||
-			strings.Contains(raw, "localhost") ||
-			strings.Contains(raw, "127.0.0.1") ||
-			strings.Contains(raw, "docker")
-		if insecure {
-			endpoint = "http://" + raw
-		} else {
-			endpoint = "https://" + raw
-		}
-	}
+	endpoint := endpointURL(raw, truthy(envNonEmpty("_U_INSECURE")))
 	return actionsconnect.NewActionsServiceClient(&http.Client{}, endpoint), nil
+}
+
+// endpointURL adds a scheme to a bare host[:port] endpoint override: http://
+// when insecure is set or the host is local, https:// otherwise. An override
+// that already carries a scheme is used as is.
+//
+// The Rust worker substring-matches "localhost", "127.0.0.1" and "docker"
+// anywhere in the string; that last one also matches hostnames like
+// docker-gw.corp.example.com and would silently downgrade them to plaintext.
+// Go matches the host exactly (see localHost) — anything else that needs
+// plaintext must say so with _U_INSECURE=true.
+func endpointURL(raw string, insecure bool) string {
+	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+		return raw
+	}
+	if insecure || localHost(raw) {
+		return "http://" + raw
+	}
+	return "https://" + raw
+}
+
+// localHost reports whether a host[:port] names the local machine or the
+// Docker host gateway (the local-sandbox default): localhost and *.localhost,
+// loopback addresses, host.docker.internal.
+func localHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.Trim(strings.ToLower(host), "[]")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "host.docker.internal" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // apiKey reads the worker API key, promoting EAGER_API_KEY and translating
@@ -219,7 +244,9 @@ func (c *Controller) RecordTrace(ctx context.Context, rec TraceRecord) error {
 
 // LookupAction returns the recorded child action with the given name, or nil
 // when nothing is recorded. The first lookup for a parent creates its informer
-// and waits for the watch stream's initial sync (bounded).
+// and waits for the watch stream's initial sync (bounded; the bound is paid at
+// most once per informer, so a dead ActionsService costs one wait, not one
+// per traced call).
 func (c *Controller) LookupAction(ctx context.Context, actionName, parentActionName string) (*Recorded, error) {
 	inf := c.informerFor(parentActionName)
 	inf.awaitReady(ctx, 5*time.Second)
@@ -315,7 +342,10 @@ func (i *informer) watch(
 					i.mu.Unlock()
 				case *actionspb.WatchForUpdatesResponse_ControlMessage:
 					if msg.ControlMessage.GetSentinel() {
-						i.once.Do(func() { close(i.ready) })
+						i.markReady()
+						// A stream that reached its sentinel is healthy: a later
+						// drop is a fresh incident, not a continuation of the last.
+						backoff = time.Second
 					}
 				}
 			}
@@ -339,14 +369,19 @@ func (i *informer) watch(
 	}
 }
 
+func (i *informer) markReady() { i.once.Do(func() { close(i.ready) }) }
+
 // awaitReady waits for the initial sync sentinel, bounded — a lookup against a
-// stream that never syncs degrades to a cache miss rather than a hang.
+// stream that never syncs degrades to a cache miss rather than a hang. A
+// timeout marks the informer ready so the wait is paid once, not on every
+// lookup; if the stream syncs later, its updates land in the cache anyway.
 func (i *informer) awaitReady(ctx context.Context, timeout time.Duration) {
 	select {
 	case <-i.ready:
 	case <-ctx.Done():
 	case <-time.After(timeout):
 		slog.Warn("action watch did not sync in time; proceeding with possibly cold cache")
+		i.markReady()
 	}
 }
 
