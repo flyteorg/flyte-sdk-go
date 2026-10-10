@@ -6,6 +6,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/actions/actionsconnect"
+	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/app/appconnect"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/auth/authconnect"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/dataproxy/dataproxyconnect"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/task/taskconnect"
@@ -15,7 +16,7 @@ import (
 )
 
 // RunClientset bundles the Connect (Buf Connect) service clients needed to
-// fetch tasks and launch runs. All clients share one authenticated
+// fetch tasks, launch runs and deploy apps. All clients share one authenticated
 // http.Client, talking the Connect protocol like the Python SDK.
 type RunClientset struct {
 	runServiceClient       workflowconnect.RunServiceClient
@@ -23,6 +24,7 @@ type RunClientset struct {
 	dataProxyServiceClient dataproxyconnect.DataProxyServiceClient
 	authMetadataClient     authconnect.AuthMetadataServiceClient
 	actionsServiceClient   actionsconnect.ActionsServiceClient
+	appServiceClient       appconnect.AppServiceClient
 }
 
 // RunServiceClient retrieves the RunServiceClient
@@ -51,6 +53,12 @@ func (c *RunClientset) AuthMetadataClient() authconnect.AuthMetadataServiceClien
 // task runtime to record and watch trace actions.
 func (c *RunClientset) ActionsServiceClient() actionsconnect.ActionsServiceClient {
 	return c.actionsServiceClient
+}
+
+// AppServiceClient retrieves the AppService client used to create, update,
+// get and stop apps (what the Python SDK's serve and deploy use).
+func (c *RunClientset) AppServiceClient() appconnect.AppServiceClient {
+	return c.appServiceClient
 }
 
 // Close releases client resources. Connect clients ride on a shared
@@ -84,7 +92,7 @@ func (rb *RunClientsetBuilder) WithTokenCache(tokenCache cache.TokenCache) *RunC
 
 // Build constructs the RunClientset: an http.Client honoring the TLS settings,
 // an anonymous auth metadata client for OAuth discovery, and authenticated
-// Connect clients for the task, run and data proxy services.
+// Connect clients for the task, run, data proxy, actions and app services.
 func (rb *RunClientsetBuilder) Build(ctx context.Context) (*RunClientset, error) {
 	if rb.tokenCache == nil {
 		rb.tokenCache = cache.NewTokenCacheInMemoryProvider()
@@ -126,5 +134,6 @@ func (rb *RunClientsetBuilder) Build(ctx context.Context) (*RunClientset, error)
 		dataProxyServiceClient: dataproxyconnect.NewDataProxyServiceClient(httpClient, url, opts...),
 		authMetadataClient:     authMetadataClient,
 		actionsServiceClient:   actionsconnect.NewActionsServiceClient(httpClient, url, opts...),
+		appServiceClient:       appconnect.NewAppServiceClient(httpClient, url, opts...),
 	}, nil
 }
