@@ -55,10 +55,7 @@ func (r *RunHandle) ListActions(ctx context.Context) ([]*Action, error) {
 	var actions []*Action
 	token := ""
 	for {
-		resp, err := r.clientset.RunServiceClient().ListActions(ctx, connect.NewRequest(&workflow.ListActionsRequest{
-			RunId:   runID,
-			Request: &common.ListRequest{Limit: 100, Token: token},
-		}))
+		resp, err := r.clientset.RunServiceClient().ListActions(ctx, connect.NewRequest(newListActionsRequest(runID, token)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to list actions for run %s: %w", runID.GetName(), err)
 		}
@@ -78,6 +75,14 @@ func (r *RunHandle) ListActions(ctx context.Context) ([]*Action, error) {
 			return actions, nil
 		}
 	}
+}
+
+func newListActionsRequest(runID *common.RunIdentifier, token string) *workflow.ListActionsRequest {
+	request := &workflow.ListActionsRequest{Request: &common.ListRequest{Limit: 100, Token: token}}
+	if runID != nil {
+		request.ScopeBy = &workflow.ListActionsRequest_RunId{RunId: runID}
+	}
+	return request
 }
 
 // GetAction fetches one action of the run by name, with full details.

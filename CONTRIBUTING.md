@@ -6,7 +6,7 @@ focused PRs are easiest to review and merge.
 
 ## Development setup
 
-Requires Go 1.26+ (see [go.mod](go.mod)).
+Requires Go 1.27.3+ (see [go.mod](go.mod)).
 
 ```bash
 git clone https://github.com/unionai/flyte-sdk-go.git

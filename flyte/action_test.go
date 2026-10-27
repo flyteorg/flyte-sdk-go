@@ -4,10 +4,65 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/common"
 	"github.com/flyteorg/flyte/v2/gen/go/flyteidl2/workflow"
 )
+
+func TestNewListActionsRequest(t *testing.T) {
+	runID := &common.RunIdentifier{Org: "org", Project: "proj", Domain: "dev", Name: "run-1"}
+	tests := []struct {
+		name     string
+		runID    *common.RunIdentifier
+		token    string
+		wantJSON string
+	}{
+		{
+			name:     "first page",
+			runID:    runID,
+			wantJSON: `{"request":{"limit":100},"runId":{"org":"org","project":"proj","domain":"dev","name":"run-1"}}`,
+		},
+		{
+			name:     "next page",
+			runID:    runID,
+			token:    "next-page",
+			wantJSON: `{"request":{"limit":100,"token":"next-page"},"runId":{"org":"org","project":"proj","domain":"dev","name":"run-1"}}`,
+		},
+		{
+			name:     "missing run identity is left to server validation",
+			wantJSON: `{"request":{"limit":100}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := newListActionsRequest(tt.runID, tt.token)
+			if tt.runID == nil {
+				assert.Nil(t, request.GetScopeBy(), "missing identity must omit the oneof")
+			} else {
+				require.IsType(t, &workflow.ListActionsRequest_RunId{}, request.GetScopeBy())
+			}
+			assert.True(t, proto.Equal(tt.runID, request.GetRunId()))
+			assert.Equal(t, uint32(100), request.GetRequest().GetLimit())
+			assert.Equal(t, tt.token, request.GetRequest().GetToken())
+			encoded, err := protojson.Marshal(request)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.wantJSON, string(encoded))
+			binary, err := proto.Marshal(request)
+			require.NoError(t, err)
+			decoded := &workflow.ListActionsRequest{}
+			require.NoError(t, proto.Unmarshal(binary, decoded))
+			if tt.runID == nil {
+				assert.Nil(t, decoded.GetScopeBy())
+			} else {
+				require.IsType(t, &workflow.ListActionsRequest_RunId{}, decoded.GetScopeBy())
+			}
+			assert.True(t, proto.Equal(tt.runID, decoded.GetRunId()), "run scope survives the wire round trip")
+		})
+	}
+}
 
 func TestActionAccessors(t *testing.T) {
 	a := &Action{pb: &workflow.ActionDetails{
